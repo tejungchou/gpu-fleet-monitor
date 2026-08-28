@@ -72,14 +72,14 @@ class FakeObserver:
 
         for gpu in telemetry:
             for rule in self.rules:
-                severity = rule.check(gpu)
-                if severity:
+                result = rule.check(gpu)
+                if result:
                     issues.append({
                         'rack_id': gpu['rack_id'],
                         'server_id': gpu['server_id'],
                         'gpu_id': gpu['gpu_id'],
-                        'issue_type': 'HIGH_TEMPERATURE',
-                        'severity': severity,
+                        'issue_type': result['issue_type'],
+                        'severity': result['severity'],
                         'detect_time': gpu['collect_time']
                     })
 
@@ -94,10 +94,16 @@ class TemperatureRule:
             return None
         
         elif 85 < temperature < 90:
-            return 'WARNING'
+            return {
+                'issue_type': 'HIGH_TEMPERATURE',
+                'severity': 'WARNING'
+            }
         
         else:
-            return 'CRITICAL'
+            return {
+                'issue_type': 'HIGH_TEMPERATURE',
+                'severity': 'CRITICAL'
+            }
         
 
 
