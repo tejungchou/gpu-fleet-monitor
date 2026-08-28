@@ -63,19 +63,68 @@ class FakeAgent:
 
         return collection_list
 
+class FakeObserver:
+    def __init__(self, rules):
+        self.rules = rules
+
+    def observe(self, telemetry):
+        issues = []
+
+        for gpu in telemetry:
+            for rule in self.rules:
+                severity = rule.check(gpu)
+                if severity:
+                    issues.append({
+                        'rack_id': gpu['rack_id'],
+                        'server_id': gpu['server_id'],
+                        'gpu_id': gpu['gpu_id'],
+                        'issue_type': 'HIGH_TEMPERATURE',
+                        'severity': severity,
+                        'detect_time': gpu['collect_time']
+                    })
+
+        return issues
+
+class TemperatureRule:
+    def check(self, gpu):
+
+        temperature = gpu['gpu_temperature']
+
+        if temperature <= 85:
+            return None
+        
+        elif 85 < temperature < 90:
+            return 'WARNING'
+        
+        else:
+            return 'CRITICAL'
+        
 
 
 def main():
     server = FakeServer('server-1', 'rack-1', 4)
     agent = FakeAgent(server)
+    temperature_rule = TemperatureRule()
+    observer = FakeObserver([temperature_rule])
+
     report = agent.collect()
-    print(f"Original state: {report}\n")
-    load_changes = ['increase', 'increase', 'decrease', 'decrease']
-    for i, change in enumerate(load_changes):
+    issues = observer.observe(report)
+
+    print("Telemetry:")
+    print(report)
+
+    print("\nIssues:")
+    print(issues)
+
+
+    for _ in range(6):
         for gpu in server.gpus:
-            gpu.update(change)
-        print("--------------------------------------")
-        print(f"After change {i}: {agent.collect()}\n")
+            gpu.update('increase')
+
+        report = agent.collect()
+        issues = observer.observe(report)
+
+        print(issues)
 
 
 if __name__ == "__main__":
