@@ -39,6 +39,7 @@ class FakeServer:
     def __init__(self, server_id, rack_id, num_gpus=4):
         self.server_id = server_id
         self.rack_id = rack_id
+        self.health = 'HEALTHY'
         self.gpus = []
         for gpu_id in range(num_gpus):
             gpu = FakeGPU(gpu_id, 62.5, 1400, 45, 0, 0, 0, 0)
@@ -94,9 +95,50 @@ class FakeObserver:
                         'severity': result['severity'],
                         'detect_time': gpu['collect_time']
                     })
-            self.previous_telemetry[key] = gpu
-
+            self.previous_telemetry[key] = gpu 
         return issues
+
+    def group_by_server(self, telemetry):
+        servers = {}
+
+        for gpu in telemetry:
+            server_id = gpu['server_id']
+
+            if server_id not in servers:
+                servers[server_id] = []
+
+            servers[server_id].append(gpu)
+        return servers
+        
+    def group_issues_by_server(self, issues):
+        servers = {}
+
+        for issue in issues:
+            server_id = issue['server_id']
+
+            if server_id not in servers:
+                servers[server_id] = []
+
+            servers[server_id].append(issue)
+        return servers
+
+class ServerHealthRule:
+    def check(self, issues):
+        critical = False
+        degraded = False
+
+        for issue in issues:
+            if issue['severity'] == 'CRITICAL':
+                critical = True
+            elif issue['severity'] == 'WARNING':
+                degraded = True
+
+        if critical:
+            return 'CRITICAL'
+        elif degraded:
+            return 'DEGRADED'
+        else:
+            return 'HEALTHY'
 
 class TemperatureRule:
     def check(self, gpu, previous_gpu=None):
@@ -116,7 +158,7 @@ class TemperatureRule:
             return {
                 'issue_type': 'HIGH_TEMPERATURE',
                 'severity': 'CRITICAL'
-            }
+            }   
         
 class ECCRule:
     def check(self, gpu, previous_gpu):
@@ -175,6 +217,19 @@ def main():
 
         print(issues)
 
+    grouped = observer.group_by_server(report)
+    print(grouped)
+
+    grouped_issues = observer.group_issues_by_server(issues)
+    print("\nGrouped Issues:")
+    print(grouped_issues)
+
+    server_health_rule = ServerHealthRule()
+
+    for server_id, server_issues in grouped_issues.items():
+        health = server_health_rule.check(server_issues)
+        server.health = health
+        print(server_id, server.health)
 
 if __name__ == "__main__":
     main()
