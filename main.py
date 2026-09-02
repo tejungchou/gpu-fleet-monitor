@@ -1,4 +1,5 @@
 import datetime
+import time
 class FakeGPU:
     def __init__(self, gpu_id, temperature, power, utilization, ecc_single_bit_errors, ecc_double_bit_errors, xid_errors ,nvlink_errors):
         self.gpu_id = gpu_id
@@ -186,50 +187,49 @@ class ECCRule:
         else:
             return None
 
+class FleetSimulator:
+    def run(self, num_servers=1):
+        fleet = []
+        for num in range(num_servers):
+            server = FakeServer(
+                server_id=f"server-{num}",
+                rack_id=f"rack-{num // 10}"
+            )
+            agent = FakeAgent(server)
+            fleet.append((server, agent))
+
+        return fleet
+    
+    def collect(self, fleet):
+        collection = []
+        for server, agent in fleet:
+            telemetry = agent.collect()
+            collection.extend(telemetry)
+        
+        return collection
+
 
 def main():
-    server = FakeServer('server-1', 'rack-1', 4)
-    agent = FakeAgent(server)
-    temperature_rule = TemperatureRule()
-    ecc_rule = ECCRule()
-    server.gpus[0].inject_ecc_error('single')
+    simulator = FleetSimulator()
     observer = FakeObserver([
-        temperature_rule,
-        ecc_rule
+        TemperatureRule(),
+        ECCRule()
     ])
 
-    report = agent.collect()
-    issues = observer.observe(report)
+    fleet = simulator.run(num_servers=3)
 
-    print("Telemetry:")
-    print(report)
-
-    print("\nIssues:")
-    print(issues)
-
-
-    for _ in range(6):
-        for gpu in server.gpus:
-            gpu.update('increase')
-
-        report = agent.collect()
-        issues = observer.observe(report)
-
+    for _ in range(5):
+        for server, agent in fleet:
+            for gpu in server.gpus:
+                gpu.update('increase')
+        collection = simulator.collect(fleet)
+        # print(collection)
+        issues = observer.observe(collection)
         print(issues)
 
-    grouped = observer.group_by_server(report)
-    print(grouped)
+        time.sleep(2)
 
-    grouped_issues = observer.group_issues_by_server(issues)
-    print("\nGrouped Issues:")
-    print(grouped_issues)
-
-    server_health_rule = ServerHealthRule()
-
-    for server_id, server_issues in grouped_issues.items():
-        health = server_health_rule.check(server_issues)
-        server.health = health
-        print(server_id, server.health)
+    
 
 if __name__ == "__main__":
     main()
