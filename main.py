@@ -124,10 +124,13 @@ class FakeObserver:
         return servers
 
 class ServerHealthRule:
-    def check(self, issues):
+    def check(self, issues, current_health):
         critical = False
         degraded = False
 
+        if current_health == 'CRITICAL':
+            return 'CRITICAL'
+        
         for issue in issues:
             if issue['severity'] == 'CRITICAL':
                 critical = True
@@ -217,15 +220,35 @@ def main():
     ])
 
     fleet = simulator.run(num_servers=3)
+    health_rules = ServerHealthRule()
 
-    for _ in range(5):
+    for i in range(5):
+
+        # 1. Update entire fleet
         for server, agent in fleet:
             for gpu in server.gpus:
                 gpu.update('increase')
+                # inject ecc error
+                if i == 2 and gpu.gpu_id == 3:
+                    gpu.inject_ecc_error('double')
+            
+        # 2. Collect entire fleet once
         collection = simulator.collect(fleet)
-        # print(collection)
+
+        # 3. Observe entire fleet once
         issues = observer.observe(collection)
-        print(issues)
+
+        # 4. Group issues
+        grouped_issues = observer.group_issues_by_server(issues)
+
+        # 5. Calculate server health
+        for server, agent in fleet:
+            server_issues = grouped_issues.get(server.server_id, [])
+            health = health_rules.check(server_issues, server.health)
+
+            server.health = health
+            print(server.server_id, server.health)
+
 
         time.sleep(2)
 
