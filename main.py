@@ -45,6 +45,15 @@ class FakeServer:
         for gpu_id in range(num_gpus):
             gpu = FakeGPU(gpu_id, 62.5, 1400, 45, 0, 0, 0, 0)
             self.gpus.append(gpu)
+        
+    def power_cycle(self):
+        self.health = 'HEALTHY'
+
+        for gpu in self.gpus:
+            gpu.ecc_single_bit_errors = 0
+            gpu.ecc_double_bit_errors = 0
+            gpu.xid_errors = 0
+            gpu.nvlink_errors = 0
 
 
 class FakeAgent:
@@ -167,28 +176,28 @@ class TemperatureRule:
 class ECCRule:
     def check(self, gpu, previous_gpu):
         if not previous_gpu:
-            prev_ecc_error_single = 0
-            prev_ecc_error_double = 0
-        else:
-            prev_ecc_error_single = previous_gpu['gpu_ecc_single_bit_errors']
-            prev_ecc_error_double = previous_gpu['gpu_ecc_double_bit_errors']
+            return None
 
+        prev_single = previous_gpu['gpu_ecc_single_bit_errors']
+        prev_double = previous_gpu['gpu_ecc_double_bit_errors']
 
-        ecc_error_single = gpu['gpu_ecc_single_bit_errors']
-        ecc_error_double = gpu['gpu_ecc_double_bit_errors']
+        current_single = gpu['gpu_ecc_single_bit_errors']
+        current_double = gpu['gpu_ecc_double_bit_errors']
 
-        if ecc_error_double > prev_ecc_error_double:
+        # This will also handle the case where counter decrease
+        if current_double > prev_double:
             return {
                 'issue_type': 'UNCORRECTABLE_ERROR',
                 'severity': 'CRITICAL'
             }
-        elif ecc_error_single > prev_ecc_error_single:
+
+        if current_single > prev_single:
             return {
                 'issue_type': 'CORRECTABLE_ERROR',
                 'severity': 'WARNING'
             }
-        else:
-            return None
+        
+        return None
 
 class FleetSimulator:
     def run(self, num_servers=1):
@@ -226,6 +235,8 @@ def main():
 
         # 1. Update entire fleet
         for server, agent in fleet:
+            if i == 3:
+                server.power_cycle()
             for gpu in server.gpus:
                 gpu.update('increase')
                 # inject ecc error
