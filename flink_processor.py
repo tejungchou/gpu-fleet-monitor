@@ -1,5 +1,8 @@
 import json
+import psycopg2
 
+from pyflink.datastream.functions import MapFunction
+from datetime import datetime
 from pyflink.common import Types, WatermarkStrategy
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream import StreamExecutionEnvironment
@@ -13,6 +16,18 @@ from pyflink.datastream.connectors.kafka import (
 def parse_telemetry(raw_record):
     return json.loads(raw_record)
 
+def issue_to_row(issue):
+    return (
+        issue["rack_id"],
+        issue["server_id"],
+        issue["gpu_id"],
+        issue["issue_type"],
+        issue["severity"],
+        issue.get("temperature"),
+        issue.get("previous_count"),
+        issue.get("current_count"),
+        datetime.fromisoformat(issue["collect_time"])
+    )
 
 class GPUHealthProcessFunction(KeyedProcessFunction):
 
@@ -98,6 +113,53 @@ class GPUHealthProcessFunction(KeyedProcessFunction):
         self.previous_single_bit_errors.update(current_single)
         self.previous_double_bit_errors.update(current_double)
 
+class PostgreSQLIssueWriter(MapFunction):
+
+    def open(self, runtime_context):
+        self.connection = psycopg2.connect(
+            host="postgres",
+            port=5432,
+            database="gpu_monitor",
+            user="gpu_user",
+            password="gpu_password",
+        )
+        self.cursor = self.connection.cursor()
+
+    def map(self, issue):
+        self.cursor.execute(
+            """
+            INSERT INTO gpu_issues (
+                rack_id,
+                server_id,
+                gpu_id,
+                issue_type,
+                severity,
+                temperature,
+                previous_count,
+                current_count,
+                collect_time
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                issue["rack_id"],
+                issue["server_id"],
+                issue["gpu_id"],
+                issue["issue_type"],
+                issue["severity"],
+                issue.get("temperature"),
+                issue.get("previous_count"),
+                issue.get("current_count"),
+                issue["collect_time"],
+            ),
+        )
+
+        self.connection.commit()
+        return issue
+
+    def close(self):
+        self.cursor.close()
+        self.connection.close()
 
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
@@ -135,6 +197,13 @@ def main():
     )
 
     issue_stream.print()
+
+    stored_issue_stream = issue_stream.map(
+    PostgreSQLIssueWriter(),
+    output_type=Types.PICKLED_BYTE_ARRAY(),
+)
+
+    stored_issue_stream.print()
 
     env.execute("GPU Fleet Health Processor")
 

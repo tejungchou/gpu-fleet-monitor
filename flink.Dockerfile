@@ -16,4 +16,6 @@ RUN wget -P /opt/flink/lib \
 RUN wget -P /opt/flink/lib \
     https://repo.maven.apache.org/maven2/org/apache/kafka/kafka-clients/4.1.0/kafka-clients-4.1.0.jar
 
+RUN pip3 install --no-cache-dir psycopg2-binary --break-system-packages
+
 USER flink
