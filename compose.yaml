@@ -19,3 +19,35 @@ services:
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  jobmanager:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: flink.Dockerfile
+    container_name: flink-jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+    volumes:
+      - .:/app
+
+  taskmanager:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: flink.Dockerfile
+    container_name: flink-taskmanager
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 3
+    volumes:
+      - .:/app
