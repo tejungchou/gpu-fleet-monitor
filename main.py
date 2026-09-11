@@ -1,7 +1,7 @@
 import datetime
 import time
-import urllib.request
-import json
+
+from kafka_ingestion import KafkaTelemetryProducer
 
 class FakeGPU:
     def __init__(self, gpu_id, temperature, power, utilization, ecc_single_bit_errors, ecc_double_bit_errors, xid_errors ,nvlink_errors):
@@ -222,18 +222,6 @@ class FleetSimulator:
         
         return collection
 
-    def send_telemetry(self, telemetry):
-        data = json.dumps(telemetry, default=str).encode("utf-8")
-
-        request = urllib.request.Request(
-            "http://receiver:8000",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        with urllib.request.urlopen(request) as response:
-            print("Receiver response:", response.read().decode())
 
 def main():
     simulator = FleetSimulator()
@@ -241,6 +229,11 @@ def main():
         TemperatureRule(),
         ECCRule()
     ])
+
+    producer = KafkaTelemetryProducer(
+        bootstrap_servers="kafka:29092",
+        topic="gpu-telemetry"
+    )
 
     fleet = simulator.run(num_servers=3)
     health_rules = ServerHealthRule()
@@ -260,8 +253,7 @@ def main():
         # 2. Collect entire fleet once
         collection = simulator.collect(fleet)
 
-        # Send telemetry to receiver via http://receiver:8000
-        simulator.send_telemetry(collection)
+        producer.send(collection)
 
         # 3. Observe entire fleet once
         issues = observer.observe(collection)
@@ -280,6 +272,8 @@ def main():
 
         time.sleep(2)
 
+
+    producer.close()
     
 
 if __name__ == "__main__":
